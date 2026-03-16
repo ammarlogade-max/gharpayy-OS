@@ -68,6 +68,7 @@ export default function AttendancePage() {
   const [hm,setHm]         = useState<HRow[]>(MHM);
   const [reports,setRep]   = useState<DailyReport[]>(MOCK_REPORTS);
   const [myAtt,setMyAtt]   = useState<MyAtt|null>(null);
+  const [myUid,setMyUid]   = useState<string|null>(null);
   const [selEmp,setSelEmp] = useState<string|null>(null);
   const [cl,setCl]         = useState(false);
   const [bl,setBl]         = useState(false);
@@ -114,8 +115,10 @@ export default function AttendancePage() {
         const att = j.data.attendance;
         setMyAtt(att);
         // Build real employee entry from status and inject into emps
+        const realUserId = att.employeeId?._id || att.employeeId || "real-user";
+        setMyUid(realUserId);
         const empFromStatus:Emp = {
-          _id: att.employeeId?._id || att.employeeId || "real-user",
+          _id: realUserId,
           employeeName: att.employeeId?.employeeName || "You",
           role: att.employeeId?.role || "employee",
           zoneId: att.employeeId?.zoneId ? {zoneName: att.employeeId.zoneId.zoneName || att.employeeId.zoneId} : undefined,
@@ -138,7 +141,7 @@ export default function AttendancePage() {
         // Also inject into heatmap
         setHm(prev=>{
           const today = new Date().toLocaleDateString("en-CA");
-          const id = empFromStatus._id;
+          const id = realUserId;
           const exists = prev.find(m=>m.employeeId===id);
           if(exists) return prev.map(m=>m.employeeId===id ? {...m, days:{...m.days,[today]:att.dayStatus}} : m);
           const days:Record<string,string> = {};
@@ -147,7 +150,7 @@ export default function AttendancePage() {
         });
         // Also inject into reports (powers Timeline + Daily Summary)
         const repFromStatus:DailyReport = {
-          employeeId: empFromStatus._id,
+          employeeId: realUserId,
           employeeName: empFromStatus.employeeName,
           role: empFromStatus.role,
           zone: empFromStatus.zoneId?.zoneName || "",
@@ -183,8 +186,8 @@ export default function AttendancePage() {
           crmActivity:{callsMade:0,leadsContacted:0,visitsScheduled:0,messagesSent:0,bookingsConfirmed:0,totalActions:0},
         };
         setRep(prev=>{
-          const exists = prev.find(m=>m.employeeId===repFromStatus.employeeId);
-          if(exists) return prev.map(m=>m.employeeId===repFromStatus.employeeId ? repFromStatus : m);
+          const exists = prev.find(m=>m.employeeId===realUserId);
+          if(exists) return prev.map(m=>m.employeeId===realUserId ? repFromStatus : m);
           return [...prev, repFromStatus];
         });
       }}
@@ -366,7 +369,7 @@ export default function AttendancePage() {
             {/* Timeline events — always show logged-in user's real data */}
             {(()=>{
               // Use real API report data (first entry = logged-in user)
-              const rep = reports.find(r=>r.employeeId===(myAtt?.employeeId?._id||myAtt?.employeeId)) || (reports && reports.length > 0 ? reports[0] : null);
+              const rep = (myUid ? reports.find(r=>r.employeeId===myUid) : null) || null;
               // If no real data yet, build timeline from myAtt sessions + breaks
               const builtFromMyAtt: {time:string;event:string;type:string}[] = [];
               if (!rep && myAtt) {
@@ -420,7 +423,7 @@ export default function AttendancePage() {
           {/* ── DAILY SUMMARY ── */}
           {tab==="summary"&&<div style={{padding:"16px 20px 20px"}}>
             <div style={{fontSize:13,color:"#999",fontWeight:500,marginBottom:14}}>Your Daily Summary — {new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</div>
-            {reports.map(rep=>{
+            {[...reports].sort((a,b)=>a.employeeId===myUid?-1:b.employeeId===myUid?1:0).map(rep=>{
               const bg=abg(rep.employeeName);
               const isAbsent=rep.currentStatus==="absent";
               return<div key={rep.employeeId} style={{border:"1px solid #EDEDEA",borderRadius:12,padding:"14px 16px",marginBottom:12}}>
