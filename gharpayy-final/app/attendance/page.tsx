@@ -86,8 +86,8 @@ export default function AttendancePage() {
         fetch("/api/attendance/status"),
         fetch("/api/attendance/daily-report"),
       ]);
-      if(e.ok){const j=await e.json();if(j.success)setEmps(j.data.employees);}
-      if(h.ok){const j=await h.json();if(j.success)setHm(j.data.heatmap||[]);}
+      if(e.ok){const j=await e.json();if(j.success && j.data.employees?.length > 0)setEmps(j.data.employees);}
+      if(h.ok){const j=await h.json();if(j.success && j.data.heatmap?.length > 0)setHm(j.data.heatmap);}
       if(s.ok){const j=await s.json();if(j.success&&j.data.attendance)setMyAtt(j.data.attendance);}
       if(r.ok){const j=await r.json();if(j.success)setRep(j.data.reports||[]);}
     }catch{/* use mock */}
