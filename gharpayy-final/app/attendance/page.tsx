@@ -206,7 +206,7 @@ export default function AttendancePage() {
 
           {/* ── HEATMAP ── */}
           {tab==="heatmap"&&<div style={{padding:"16px 20px 20px"}}>
-            <div style={{fontSize:13,color:"#999",fontWeight:500,marginBottom:12}}>Weekly Heatmap</div>
+            <div style={{fontSize:13,color:"#999",fontWeight:500,marginBottom:12}}>Your Weekly Attendance</div>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",minWidth:300}}>
                 <thead><tr><td style={{width:86,paddingBottom:8}}/>{weekDays.map(d=><td key={d.date} style={{textAlign:"center",fontSize:12,color:d.date===TODAY?"#E8540A":"#BBB",fontWeight:d.date===TODAY?700:400,paddingBottom:8,minWidth:44}}>{d.label}</td>)}</tr></thead>
@@ -253,29 +253,37 @@ export default function AttendancePage() {
           {/* ── SESSION TIMELINE ── */}
           {tab==="timeline"&&<div style={{padding:"16px 20px 20px"}}>
             <div style={{fontSize:13,color:"#999",fontWeight:500,marginBottom:12}}>
-              Work Session Timeline
-              {selEmp&&<span style={{color:"#E8540A",marginLeft:6}}>— {emps.find(e=>e._id===selEmp)?.employeeName}</span>}
+              Work Session Timeline — Your Day
             </div>
-            {/* Employee selector pills */}
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
-              {emps.map(emp=>{
-                const bg=abg(emp.employeeName);
-                return<button key={emp._id} onClick={()=>setSelEmp(emp._id===selEmp?null:emp._id)} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",borderRadius:20,border:emp._id===selEmp?"1.5px solid #E8540A":"1px solid #DDD",background:emp._id===selEmp?"#FFF3EE":"#fff",cursor:"pointer",fontSize:12,fontWeight:emp._id===selEmp?600:400,color:emp._id===selEmp?"#E8540A":"#555"}}>
-                  <div style={{width:20,height:20,borderRadius:"50%",background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:ATC[bg]||"#333"}}>{ini(emp.employeeName)}</div>
-                  {emp.employeeName.split(" ")[0]}
-                </button>;
-              })}
-            </div>
-            {/* Timeline events */}
+            {/* Timeline events — always show logged-in user's real data */}
             {(()=>{
-              const rep = selEmp ? reports.find(r=>r.employeeId===selEmp) : null;
-              const events = rep?.timeline || [];
-              if(!selEmp) return<div style={{textAlign:"center",padding:"32px 0",color:"#CCC",fontSize:13}}>Select an employee above to see their day timeline</div>;
-              if(events.length===0) return<div style={{textAlign:"center",padding:"32px 0",color:"#CCC",fontSize:13}}>No activity recorded yet today</div>;
+              // Use real API report data (first entry = logged-in user)
+              const rep = reports && reports.length > 0 ? reports[0] : null;
+              // If no real data yet, build timeline from myAtt sessions + breaks
+              const builtFromMyAtt: {time:string;event:string;type:string}[] = [];
+              if (!rep && myAtt) {
+                const events: {at:Date;label:string;type:string}[] = [];
+                for (const sess of myAtt.sessions) {
+                  events.push({at:new Date(sess.checkInTime),label:"Clock-in",type:"checkin"});
+                  if (sess.checkOutTime) events.push({at:new Date(sess.checkOutTime),label:"Clock-out",type:"checkout"});
+                }
+                for (const brk of myAtt.breaks) {
+                  const bl = brk.breakType==="short"?"Short Break":brk.breakType==="lunch"?"Lunch Break":"Personal Break";
+                  events.push({at:new Date(brk.breakStart),label:`${bl} started`,type:"break_start"});
+                  if (brk.breakEnd) events.push({at:new Date(brk.breakEnd),label:`Back from ${bl.toLowerCase()} (${brk.durationMinutes}m)`,type:"break_end"});
+                }
+                events.sort((a,b)=>a.at.getTime()-b.at.getTime());
+                for (const ev of events) {
+                  builtFromMyAtt.push({time:ev.at.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true}),event:ev.label,type:ev.type});
+                }
+              }
+              const events = rep?.timeline || builtFromMyAtt;
+              if (!myAtt && events.length === 0) return<div style={{textAlign:"center",padding:"32px 0",color:"#CCC",fontSize:13}}>Clock in to start tracking your day</div>;
+              if (events.length === 0) return<div style={{textAlign:"center",padding:"32px 0",color:"#CCC",fontSize:13}}>No activity recorded yet today</div>;
+              const summary = rep || (myAtt ? {netWorkFormatted:fm(myAtt.totalWorkMinutes),breakMinutes:myAtt.totalBreakMinutes,sessionCount:myAtt.sessions.length} : null);
               return<div style={{position:"relative",paddingLeft:28}}>
-                {/* Vertical line */}
                 <div style={{position:"absolute",left:9,top:12,bottom:12,width:2,background:"#F0F0EC",borderRadius:2}}/>
-                {events.map((ev,i)=>{
+                {events.filter(ev=>!ev.event.includes("(0m)")).map((ev,i)=>{
                   const col=TL_COLORS[ev.type]||{bg:"#F1EFE8",dot:"#888"};
                   return<div key={i} style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:16,position:"relative"}}>
                     <div style={{width:20,height:20,borderRadius:"50%",background:col.dot,flexShrink:0,zIndex:1,display:"flex",alignItems:"center",justifyContent:"center",marginLeft:-28+9-10+1}}>
@@ -289,13 +297,12 @@ export default function AttendancePage() {
                     </div>
                   </div>;
                 })}
-                {/* Summary at bottom */}
-                {rep&&<div style={{background:"#F8F8F6",borderRadius:10,padding:"12px 14px",marginTop:4}}>
+                {summary&&<div style={{background:"#F8F8F6",borderRadius:10,padding:"12px 14px",marginTop:4}}>
                   <div style={{fontSize:12,color:"#999",marginBottom:6}}>Day summary</div>
                   <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
-                    <div><span style={{fontSize:13,fontWeight:600,color:"#111"}}>{rep.netWorkFormatted}</span><span style={{fontSize:12,color:"#999",marginLeft:4}}>net work</span></div>
-                    <div><span style={{fontSize:13,fontWeight:600,color:"#111"}}>{fm(rep.breakMinutes)}</span><span style={{fontSize:12,color:"#999",marginLeft:4}}>breaks</span></div>
-                    <div><span style={{fontSize:13,fontWeight:600,color:"#111"}}>{rep.sessionCount}</span><span style={{fontSize:12,color:"#999",marginLeft:4}}>session{rep.sessionCount!==1?"s":""}</span></div>
+                    <div><span style={{fontSize:13,fontWeight:600,color:"#111"}}>{summary.netWorkFormatted}</span><span style={{fontSize:12,color:"#999",marginLeft:4}}>net work</span></div>
+                    <div><span style={{fontSize:13,fontWeight:600,color:"#111"}}>{fm(summary.breakMinutes)}</span><span style={{fontSize:12,color:"#999",marginLeft:4}}>breaks</span></div>
+                    <div><span style={{fontSize:13,fontWeight:600,color:"#111"}}>{summary.sessionCount}</span><span style={{fontSize:12,color:"#999",marginLeft:4}}>sessions</span></div>
                   </div>
                 </div>}
               </div>;
@@ -304,7 +311,7 @@ export default function AttendancePage() {
 
           {/* ── DAILY SUMMARY ── */}
           {tab==="summary"&&<div style={{padding:"16px 20px 20px"}}>
-            <div style={{fontSize:13,color:"#999",fontWeight:500,marginBottom:14}}>Daily Work Summary — {new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</div>
+            <div style={{fontSize:13,color:"#999",fontWeight:500,marginBottom:14}}>Your Daily Summary — {new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</div>
             {reports.map(rep=>{
               const bg=abg(rep.employeeName);
               const isAbsent=rep.currentStatus==="absent";
