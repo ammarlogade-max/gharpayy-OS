@@ -115,13 +115,15 @@ export default function AttendancePage() {
         const att = j.data.attendance;
         setMyAtt(att);
         // Build real employee entry from status and inject into emps
-        const realUserId = att.employeeId?._id || att.employeeId || "real-user";
+        const attAny = att as Record<string,unknown>;
+        const empIdField = attAny.employeeId as {_id?:string}|string|undefined;
+        const realUserId = (typeof empIdField==="object" ? empIdField?._id : empIdField) || "real-user";
         setMyUid(realUserId);
         const empFromStatus:Emp = {
           _id: realUserId,
-          employeeName: att.employeeId?.employeeName || "You",
-          role: att.employeeId?.role || "employee",
-          zoneId: att.employeeId?.zoneId ? {zoneName: att.employeeId.zoneId.zoneName || att.employeeId.zoneId} : undefined,
+          employeeName: (typeof empIdField==="object" ? (empIdField as {employeeName?:string})?.employeeName : undefined) || "You",
+          role: (typeof empIdField==="object" ? (empIdField as {role?:string})?.role : undefined) || "employee",
+          zoneId: (typeof empIdField==="object") ? {zoneName: ((empIdField as {zoneId?:{zoneName?:string}|string})?.zoneId as {zoneName?:string})?.zoneName || ""} : undefined,
           todayAttendance: {
             currentStatus: att.currentStatus,
             firstCheckIn: att.firstCheckIn,
@@ -143,9 +145,9 @@ export default function AttendancePage() {
           const today = new Date().toLocaleDateString("en-CA");
           const id = realUserId;
           const exists = prev.find(m=>m.employeeId===id);
-          if(exists) return prev.map(m=>m.employeeId===id ? {...m, days:{...m.days,[today]:att.dayStatus}} : m);
-          const days:Record<string,string> = {};
-          days[today] = att.dayStatus;
+          if(exists) return prev.map(m=>m.employeeId===id ? {...m, days:{...m.days,[today]:(att.dayStatus as DayStatus)||"none"}} : m);
+          const days:Record<string,DayStatus> = {};
+          days[today] = (att.dayStatus as DayStatus) || "none";
           return [...prev, {employeeId:id, employeeName:empFromStatus.employeeName, days}];
         });
         // Also inject into reports (powers Timeline + Daily Summary)
