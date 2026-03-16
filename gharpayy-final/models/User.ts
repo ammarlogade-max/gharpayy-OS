@@ -53,8 +53,9 @@ UserSchema.methods.comparePassword = async function (plain: string): Promise<boo
 // Never return passwordHash in JSON responses
 UserSchema.set("toJSON", {
   transform: (_doc, ret) => {
-    delete ret.passwordHash;
-    return ret;
+    const obj = ret as unknown as Record<string, unknown>;
+    delete obj.passwordHash;
+    return obj;
   },
 });
 
