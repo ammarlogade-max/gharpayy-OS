@@ -145,6 +145,48 @@ export default function AttendancePage() {
           days[today] = att.dayStatus;
           return [...prev, {employeeId:id, employeeName:empFromStatus.employeeName, days}];
         });
+        // Also inject into reports (powers Timeline + Daily Summary)
+        const repFromStatus:DailyReport = {
+          employeeId: empFromStatus._id,
+          employeeName: empFromStatus.employeeName,
+          role: empFromStatus.role,
+          zone: empFromStatus.zoneId?.zoneName || "",
+          clockIn: att.firstCheckIn ? new Date(att.firstCheckIn).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true}) : null,
+          clockOut: att.lastCheckOut ? new Date(att.lastCheckOut).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true}) : null,
+          totalElapsedMinutes: att.totalWorkMinutes + att.totalBreakMinutes,
+          breakMinutes: att.totalBreakMinutes,
+          netWorkMinutes: att.totalWorkMinutes,
+          netWorkFormatted: att.totalWorkMinutes >= 60 ? `${Math.floor(att.totalWorkMinutes/60)}h ${att.totalWorkMinutes%60}m` : `${att.totalWorkMinutes}m`,
+          currentStatus: att.currentStatus,
+          dayStatus: att.dayStatus,
+          sessionCount: att.sessions?.length || 0,
+          breaks: (att.breaks||[]).map((b:{breakType:string;breakStart:string;breakEnd:string|null;durationMinutes:number})=>({
+            breakType: b.breakType as "short"|"lunch"|"personal",
+            start: new Date(b.breakStart).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true}),
+            end: b.breakEnd ? new Date(b.breakEnd).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true}) : null,
+            durationMinutes: b.durationMinutes,
+          })),
+          timeline: (()=>{
+            const events:{at:Date;label:string;type:string}[] = [];
+            for(const sess of (att.sessions||[])){
+              events.push({at:new Date(sess.checkInTime),label:"Clock-in",type:"checkin"});
+              if(sess.checkOutTime) events.push({at:new Date(sess.checkOutTime),label:"Clock-out",type:"checkout"});
+            }
+            for(const brk of (att.breaks||[])){
+              const bl = brk.breakType==="short"?"Short Break":brk.breakType==="lunch"?"Lunch Break":"Personal Break";
+              events.push({at:new Date(brk.breakStart),label:`${bl} started`,type:"break_start"});
+              if(brk.breakEnd&&brk.durationMinutes>0) events.push({at:new Date(brk.breakEnd),label:`Back from ${bl.toLowerCase()} (${brk.durationMinutes}m)`,type:"break_end"});
+            }
+            events.sort((a,b)=>a.at.getTime()-b.at.getTime());
+            return events.map(ev=>({time:ev.at.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true}),event:ev.label,type:ev.type}));
+          })(),
+          crmActivity:{callsMade:0,leadsContacted:0,visitsScheduled:0,messagesSent:0,bookingsConfirmed:0,totalActions:0},
+        };
+        setRep(prev=>{
+          const exists = prev.find(m=>m.employeeId===repFromStatus.employeeId);
+          if(exists) return prev.map(m=>m.employeeId===repFromStatus.employeeId ? repFromStatus : m);
+          return [...prev, repFromStatus];
+        });
       }}
       if(r.ok){const j=await r.json();if(j.success&&j.data.reports?.length>0){
         setRep(prev=>{
@@ -324,7 +366,7 @@ export default function AttendancePage() {
             {/* Timeline events — always show logged-in user's real data */}
             {(()=>{
               // Use real API report data (first entry = logged-in user)
-              const rep = reports && reports.length > 0 ? reports[0] : null;
+              const rep = reports.find(r=>r.employeeId===(myAtt?.employeeId?._id||myAtt?.employeeId)) || (reports && reports.length > 0 ? reports[0] : null);
               // If no real data yet, build timeline from myAtt sessions + breaks
               const builtFromMyAtt: {time:string;event:string;type:string}[] = [];
               if (!rep && myAtt) {
