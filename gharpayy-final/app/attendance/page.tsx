@@ -68,7 +68,7 @@ export default function AttendancePage() {
   const [hm,setHm]         = useState<HRow[]>(MHM);
   const [reports,setRep]   = useState<DailyReport[]>(MOCK_REPORTS);
   const [myAtt,setMyAtt]   = useState<MyAtt|null>(null);
-  const [selEmp,setSelEmp] = useState<string|null>(null);  // for status board drill-down
+  const [selEmp,setSelEmp] = useState<string|null>(null);
   const [cl,setCl]         = useState(false);
   const [bl,setBl]         = useState(false);
   const [bt,setBt]         = useState<BreakType>("short");
@@ -86,10 +86,77 @@ export default function AttendancePage() {
         fetch("/api/attendance/status"),
         fetch("/api/attendance/daily-report"),
       ]);
-      if(e.ok){const j=await e.json();if(j.success && j.data.employees?.length > 0)setEmps(j.data.employees);}
-      if(h.ok){const j=await h.json();if(j.success && j.data.heatmap?.length > 0)setHm(j.data.heatmap);}
-      if(s.ok){const j=await s.json();if(j.success&&j.data.attendance)setMyAtt(j.data.attendance);}
-      if(r.ok){const j=await r.json();if(j.success)setRep(j.data.reports||[]);}
+      // EMPLOYEES: try admin fetch first, fall back to building from status
+      if(e.ok){const j=await e.json();if(j.success&&j.data.employees?.length>0){
+        setEmps(prev=>{
+          const mockIds = new Set(prev.map(m=>m._id));
+          const realNew = j.data.employees.filter((r:{_id:string})=>!mockIds.has(r._id));
+          const updated = prev.map(m=>{
+            const real = j.data.employees.find((r:{_id:string})=>r._id===m._id);
+            return real ? {...m, todayAttendance: real.todayAttendance} : m;
+          });
+          return [...updated, ...realNew];
+        });
+      }}
+      // HEATMAP: merge real rows into mock — keep mock rows, add/update real ones
+      if(h.ok){const j=await h.json();if(j.success&&j.data.heatmap?.length>0){
+        setHm(prev=>{
+          const mockIds = new Set(prev.map(m=>m.employeeId));
+          const realNew = j.data.heatmap.filter((r:{employeeId:string})=>!mockIds.has(r.employeeId));
+          const updated = prev.map(m=>{
+            const real = j.data.heatmap.find((r:{employeeId:string})=>r.employeeId===m.employeeId);
+            return real ? real : m;
+          });
+          return [...updated, ...realNew];
+        });
+      }}
+      if(s.ok){const j=await s.json();if(j.success&&j.data.attendance){
+        const att = j.data.attendance;
+        setMyAtt(att);
+        // Build real employee entry from status and inject into emps
+        const empFromStatus:Emp = {
+          _id: att.employeeId?._id || att.employeeId || "real-user",
+          employeeName: att.employeeId?.employeeName || "You",
+          role: att.employeeId?.role || "employee",
+          zoneId: att.employeeId?.zoneId ? {zoneName: att.employeeId.zoneId.zoneName || att.employeeId.zoneId} : undefined,
+          todayAttendance: {
+            currentStatus: att.currentStatus,
+            firstCheckIn: att.firstCheckIn,
+            dayStatus: att.dayStatus,
+            totalWorkMinutes: att.totalWorkMinutes,
+            totalBreakMinutes: att.totalBreakMinutes,
+            sessions: att.sessions,
+            breaks: att.breaks,
+            isGeoValid: att.sessions?.some((s:{isGeoValid:boolean})=>s.isGeoValid) ?? false,
+          }
+        };
+        setEmps(prev=>{
+          const exists = prev.find(m=>m._id===empFromStatus._id);
+          if(exists) return prev.map(m=>m._id===empFromStatus._id ? {...m, todayAttendance: empFromStatus.todayAttendance} : m);
+          return [...prev, empFromStatus];
+        });
+        // Also inject into heatmap
+        setHm(prev=>{
+          const today = new Date().toLocaleDateString("en-CA");
+          const id = empFromStatus._id;
+          const exists = prev.find(m=>m.employeeId===id);
+          if(exists) return prev.map(m=>m.employeeId===id ? {...m, days:{...m.days,[today]:att.dayStatus}} : m);
+          const days:Record<string,string> = {};
+          days[today] = att.dayStatus;
+          return [...prev, {employeeId:id, employeeName:empFromStatus.employeeName, days}];
+        });
+      }}
+      if(r.ok){const j=await r.json();if(j.success&&j.data.reports?.length>0){
+        setRep(prev=>{
+          const mockIds = new Set(prev.map(m=>m.employeeId));
+          const realNew = j.data.reports.filter((r:{employeeId:string})=>!mockIds.has(r.employeeId));
+          const updated = prev.map(m=>{
+            const real = j.data.reports.find((r:{employeeId:string})=>r.employeeId===m.employeeId);
+            return real ? real : m;
+          });
+          return [...updated, ...realNew];
+        });
+      }}
     }catch{/* use mock */}
   },[]);
 
@@ -133,7 +200,6 @@ export default function AttendancePage() {
   const isIn     = myAtt?.currentStatus==="checked_in";
   const isOB     = myAtt?.currentStatus==="on_break";
   const zones    = [...new Set(emps.map(e=>e.zoneId?.zoneName||"Unknown"))];
-  const selReport= selEmp ? reports.find(r=>r.employeeId===selEmp)||null : null;
 
   const TABS:{id:Tab;l:string}[]=[
     {id:"heatmap",  l:"Heatmap"},
@@ -230,7 +296,7 @@ export default function AttendancePage() {
           {/* ── TODAY'S LOG ── */}
           {tab==="log"&&<div style={{padding:"16px 20px 4px"}}>
             <div style={{fontSize:13,color:"#999",fontWeight:500,marginBottom:12}}>Today&apos;s Log</div>
-            {emps.map(emp=><ROW key={emp._id} emp={emp}/>)}
+{emps.map(emp=><ROW key={emp._id} emp={emp}/>)}
           </div>}
 
           {/* ── LIVE STATUS BOARD ── */}
